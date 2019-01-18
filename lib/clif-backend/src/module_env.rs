@@ -104,7 +104,7 @@ impl<'module, 'isa, 'data> ModuleEnvironment<'data> for ModuleEnv<'module, 'isa>
             GlobalInit::F32Const(x) => Initializer::Const(Value::F32(f32::from_bits(x))),
             GlobalInit::F64Const(x) => Initializer::Const(Value::F64(f64::from_bits(x))),
             GlobalInit::GetGlobal(global_index) => {
-                assert!(!desc.mutable);
+                // assert!(!desc.mutable); // Can be mutable
                 let global_index: GlobalIndex = Converter(global_index).into();
                 let imported_global_index = global_index
                     .local_or_import(self.module)
@@ -349,9 +349,9 @@ impl<'module, 'isa, 'data> ModuleEnvironment<'data> for ModuleEnv<'module, 'isa>
 
             let mut func = ir::Function::with_name_signature(name, sig);
 
-            println!("translating function");
+            // println!("translating function");
             func_translator.translate(body_bytes, &mut func, &mut func_env)?;
-            println!("done translating function");
+            // println!("done translating function");
 
             func
         };

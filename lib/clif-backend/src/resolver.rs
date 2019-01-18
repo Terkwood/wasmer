@@ -78,6 +78,7 @@ impl FuncResolverBuilder {
     }
 
     pub fn finalize(mut self) -> Result<FuncResolver, String> {
+        println!("resolver start");
         for (index, relocs) in self.relocations.iter() {
             for ref reloc in relocs {
                 let target_func_address: isize = match reloc.target {
@@ -85,7 +86,16 @@ impl FuncResolverBuilder {
                         // This will always be an internal function
                         // because imported functions are not
                         // called in this way.
-                        self.resolver.lookup(local_func_index).unwrap().as_ptr() as isize
+                        println!("function norm: {:?}", local_func_index);
+
+                        // TODO: Fix ut-of-bound index issue lua.wasm
+                        // self.resolver.lookup(local_func_index).unwrap().as_ptr() as isize
+                        let r = match self.resolver.lookup(local_func_index) {
+                            Some(value) => value.as_ptr() as isize,
+                            None => 0,
+                        };
+                        println!("function norm end");
+                        r
                     }
                     RelocationType::LibCall(libcall) => match libcall {
                         ir::LibCall::CeilF32 => libcalls::ceilf32 as isize,
@@ -145,6 +155,7 @@ impl FuncResolverBuilder {
                 }
             }
         }
+        println!("resolver end");
 
         unsafe {
             self.resolver

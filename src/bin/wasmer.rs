@@ -83,6 +83,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
     let emscripten_globals = wasmer_emscripten::EmscriptenGlobals::new();
 
     let mut import_object = if abi == webassembly::InstanceABI::Emscripten {
+        debug!("webassembly - generating emscripten imports");
         wasmer_emscripten::generate_emscripten_env(&emscripten_globals)
     } else {
         wasmer_runtime::import::Imports::new()
@@ -102,6 +103,7 @@ fn execute_wasm(options: &Run) -> Result<(), String> {
         .instantiate(import_object)
         .map_err(|err| format!("Can't instantiate the WebAssembly module: {}", err))?;
 
+    debug!("webassembly - starting instance");
     webassembly::start_instance(
         Arc::clone(&module),
         &mut instance,
