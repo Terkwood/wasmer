@@ -1,6 +1,7 @@
 use crate::recovery::call_protected;
 use crate::{
     backing::{ImportBacking, LocalBacking},
+    error::{CallError, CallResult, Result},
     export::{
         Context, Export, ExportIter, FuncPointer, GlobalPointer, MemoryPointer, TablePointer,
     },
@@ -23,6 +24,7 @@ pub(crate) struct InstanceInner {
     vmctx: Box<vm::Ctx>,
 }
 
+/// A WebAssembly instance
 pub struct Instance {
     pub module: Rc<ModuleInner>,
     inner: Box<InstanceInner>,
@@ -31,10 +33,7 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub(crate) fn new(
-        module: Rc<ModuleInner>,
-        mut imports: Box<Imports>,
-    ) -> Result<Instance, String> {
+    pub(crate) fn new(module: Rc<ModuleInner>, mut imports: Box<Imports>) -> Result<Instance> {
         // We need the backing and import_backing to create a vm::Ctx, but we need
         // a vm::Ctx to create a backing and an import_backing. The solution is to create an
         // uninitialized vm::Ctx and then initialize it in-place.
@@ -73,17 +72,22 @@ impl Instance {
     ///
     /// This will eventually return `Result<Option<Vec<Value>>, String>` in
     /// order to support multi-value returns.
-    pub fn call(&mut self, name: &str, args: &[Value]) -> Result<Option<Value>, String> {
-        let export_index = self
-            .module
-            .exports
-            .get(name)
-            .ok_or_else(|| format!("there is no export with that name: {}", name))?;
+    pub fn call(&mut self, name: &str, args: &[Value]) -> CallResult<Option<Value>> {
+        let export_index =
+            self.module
+                .exports
+                .get(name)
+                .ok_or_else(|| CallError::NoSuchExport {
+                    name: name.to_string(),
+                })?;
 
         let func_index = if let ExportIndex::Func(func_index) = export_index {
             *func_index
         } else {
-            return Err("that export is not a function".to_string());
+            return Err(CallError::ExportNotFunc {
+                name: name.to_string(),
+            }
+            .into());
         };
 
         self.call_with_index(func_index, args)
@@ -103,7 +107,7 @@ impl Instance {
         &mut self,
         func_index: FuncIndex,
         args: &[Value],
-    ) -> Result<Option<Value>, String> {
+    ) -> CallResult<Option<Value>> {
         let (func_ref, ctx, signature) = self.inner.get_func_from_index(&self.module, func_index);
 
         let func_ptr = CodePtr::from_ptr(func_ref.inner() as _);
@@ -118,7 +122,10 @@ impl Instance {
         );
 
         if !signature.check_sig(args) {
-            return Err("incorrect signature".to_string());
+            Err(CallError::Signature {
+                expected: signature.clone(),
+                found: args.iter().map(|val| val.ty()).collect(),
+            })?
         }
 
         let libffi_args: Vec<_> = args
@@ -132,7 +139,7 @@ impl Instance {
             .chain(iter::once(libffi_arg(&vmctx_ptr)))
             .collect();
 
-        call_protected(|| {
+        Ok(call_protected(|| {
             signature
                 .returns
                 .first()
@@ -149,7 +156,7 @@ impl Instance {
                     }
                     None
                 })
-        })
+        })?)
     }
 }
 
@@ -242,9 +249,9 @@ impl InstanceInner {
     ) -> (MemoryPointer, Context, Memory) {
         match mem_index.local_or_import(module) {
             LocalOrImport::Local(local_mem_index) => {
-                let vm_mem = &mut self.backing.memories[local_mem_index];
+                let vm_mem = &mut self.backing.vm_memories[local_mem_index];
                 (
-                    unsafe { MemoryPointer::new(&mut vm_mem.into_vm_memory(local_mem_index)) },
+                    unsafe { MemoryPointer::new(vm_mem) },
                     Context::Internal,
                     *module
                         .memories
@@ -307,9 +314,9 @@ impl InstanceInner {
     ) -> (TablePointer, Context, Table) {
         match table_index.local_or_import(module) {
             LocalOrImport::Local(local_table_index) => {
-                let vm_table = &mut self.backing.tables[local_table_index];
+                let vm_table = &mut self.backing.vm_tables[local_table_index];
                 (
-                    unsafe { TablePointer::new(&mut vm_table.into_vm_table()) },
+                    unsafe { TablePointer::new(vm_table) },
                     Context::Internal,
                     *module
                         .tables
@@ -344,7 +351,7 @@ impl Namespace for Instance {
 
 // TODO Remove this later, only needed for compilation till emscripten is updated
 impl Instance {
-    pub fn memory_offset_addr(&self, index: usize, offset: usize) -> *const u8 {
+    pub fn memory_offset_addr(&self, _index: usize, _offset: usize) -> *const u8 {
         unimplemented!()
     }
 }

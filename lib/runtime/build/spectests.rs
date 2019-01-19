@@ -81,6 +81,7 @@ use wasmer_clif_backend::CraneliftCompiler;
 use wasmer_runtime::import::Imports;
 use wasmer_runtime::types::Value;
 use wasmer_runtime::{{Instance, module::Module}};
+use wasmer_runtime::error::Result;
 
 static IMPORT_MODULE: &str = r#"
 (module
@@ -274,6 +275,10 @@ impl WastTestGenerator {
             buffer: buffer,
             module_calls: HashMap::new(),
         }
+    }
+
+    fn is_fat_test(&self) -> bool {
+        self.command_no > 200
     }
 
     fn consume(&mut self) {
@@ -606,11 +611,12 @@ fn {}_assert_malformed() {{
                 let func_name = format!("{}_action_invoke", self.command_name());
                 self.buffer.push_str(
                     format!(
-                        "fn {func_name}(instance: &mut Instance) -> Result<(), String> {{
+                        "fn {func_name}(instance: &mut Instance) -> Result<()> {{
     println!(\"Executing function {{}}\", \"{func_name}\");
     let result = instance.call(\"{field}\", &[{args_values}]);
     {assertion}
-    result.map(|_| ())
+    result?;
+    Ok(())
 }}\n",
                         func_name = func_name,
                         field = field,
@@ -737,14 +743,15 @@ fn {}() {{
 }
 
 fn generate_spectest(out: &mut File, test_name: &str, wast: &PathBuf) -> std::io::Result<()> {
-    out.write(format!("mod test_{} {{\nuse super::*;\n", test_name).as_bytes())?;
-
     let mut generator = WastTestGenerator::new(wast);
     generator.consume();
     let generated_script = generator.finalize();
-    out.write(generated_script.as_bytes())?;
 
-    out.write("\n}\n".as_bytes())?;
+    if !generator.is_fat_test() {
+        out.write(format!("mod test_{} {{\nuse super::*;\n", test_name).as_bytes())?;
+        out.write(generated_script.as_bytes())?;
+        out.write("\n}\n".as_bytes())?;
+    }
 
     Ok(())
 }

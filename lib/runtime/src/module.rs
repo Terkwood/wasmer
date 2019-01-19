@@ -1,5 +1,6 @@
 use crate::{
     backend::FuncResolver,
+    error::Result,
     import::Imports,
     sig_registry::SigRegistry,
     structures::Map,
@@ -13,7 +14,7 @@ use crate::{
 use hashbrown::HashMap;
 use std::rc::Rc;
 
-/// This is used to instantiate a new webassembly module.
+/// This is used to instantiate a new WebAssembly module.
 #[doc(hidden)]
 pub struct ModuleInner {
     pub func_resolver: Box<dyn FuncResolver>,
@@ -46,8 +47,8 @@ impl Module {
         Module(inner)
     }
 
-    /// Instantiate a webassembly module with the provided imports.
-    pub fn instantiate(&self, imports: Imports) -> Result<Instance, String> {
+    /// Instantiate a WebAssembly module with the provided imports.
+    pub fn instantiate(&self, imports: Imports) -> Result<Instance> {
         Instance::new(Rc::clone(&self.0), Box::new(imports))
     }
 }
